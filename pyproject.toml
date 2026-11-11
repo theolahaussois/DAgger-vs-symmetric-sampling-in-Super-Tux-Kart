@@ -1,0 +1,27 @@
+[project]
+name = "DAgger-vs-symmetric-sampling-in-Super-Tux-Kart"
+version = "0.1.0"
+requires-python = ">=3.11, <3.13"
+dependencies = [
+    "gymnasium",
+    "ipywidgets",
+    "jupyter",
+    "jupyterlab",
+    "matplotlib",
+    "mazemdp",
+    "numpy",
+    "omegaconf",
+    "optuna",
+    "pyyaml",
+    "rl-mind",
+    "scipy",
+    "torch",
+    "tqdm",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
