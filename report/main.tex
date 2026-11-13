@@ -1,0 +1,160 @@
+\documentclass[10pt,a4paper,french]{article}
+
+\usepackage[margin=2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage[capitalize,nameinlink]{cleveref}
+
+\graphicspath{{figures/}}
+\setlength{\parskip}{0.3em}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\D}{\mathcal{D}}
+\newcommand{\piexp}{\pi^{*}}
+\newcommand{\ind}{\mathbf{1}}
+
+\title{DAgger vs symmetric sampling in Super Tux Kart}
+\author{Théo Fontaine \and Théophile Lahaussois\\[0.3em]
+  \small Sorbonne Université -- M2 MIND -- UM5IN872 Reinforcement Learning\\
+  \small Code : \url{https://github.com/theolahaussois/DAgger-vs-symmetric-sampling-in-Super-Tux-Kart}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Nous comparons DAgger et le \emph{symmetric sampling} de RLPD pour apprendre à un kart seul de SuperTuxKart à boucler un tour le plus vite possible, à partir d'un même expert écrit à la main et d'un même tour de démonstration (609 transitions). Sur 10 graines par méthode, DAgger atteint le niveau de l'expert dès sa première itération et termine tous ses tours ; c'est la méthode la plus performante et la plus fiable à budget égal (IQM de 102,5 contre 100,8 pour l'expert). RLPD part d'un acteur aléatoire, boucle son premier tour après environ 8\,600 pas, puis rejoint DAgger en médiane, mais deux graines sur dix s'effondrent. Sans les démonstrations, le même algorithme ne termine aucun tour : le symmetric sampling est ce qui rend le problème soluble. Enfin, les deux méthodes battent parfois l'expert de près de 3\,s en évitant une banane que celui-ci touche à chaque tour.
+\end{abstract}
+
+\section{Introduction}
+\label{sec-intro}
+
+Pour apprendre à conduire à partir d'un pilote expert $\piexp$, on peut l'\emph{imiter}, en lui demandant quelle action il aurait prise dans les situations que l'on rencontre : c'est DAgger \citep{ross2011dagger}. On peut aussi \emph{apprendre par renforcement} en réutilisant ses trajectoires comme des expériences déjà vécues : c'est le \emph{symmetric sampling} de RLPD \citep{ball2023rlpd}. Les deux méthodes partent du même expert, mais n'en tirent pas la même information : DAgger l'interroge en ligne et ignore la récompense ; RLPD ne l'interroge jamais, mais optimise directement la récompense. Nous les comparons sur un kart seul de SuperTuxKart, qui doit faire un tour le plus vite possible, avec quatre questions : \textbf{(Q1)} à budget d'interaction égal, quelle méthode produit le pilote le plus rapide ? \textbf{(Q2)} que gagne-t-on à interroger l'expert en ligne plutôt qu'à imiter ses démonstrations, et quel est l'effet du mélange $\beta_i$ de DAgger ? \textbf{(Q3)} que doit RLPD au symmetric sampling ? \textbf{(Q4)} une méthode peut-elle dépasser l'expert ?
+
+\section{Méthodes}
+\label{sec-methods}
+
+\paragraph{Behavioral cloning et DAgger.} Le behavioral cloning (BC) apprend une politique déterministe $\pi_\theta$ par régression sur les paires $(s_t, a_t)$ de l'expert, en minimisant $\mathcal{L}(\theta) = \sum_t \|a_t - \pi_\theta(s_t)\|^2$. Il est appris sur les états de l'expert mais utilisé sur les siens : une petite erreur l'emmène dans des états absents des données, et l'écart à l'expert peut croître en $O(H^2\varepsilon)$ sur un horizon $H$ \citep{ross2010efficient}. DAgger corrige ce décalage de distribution. À l'itération $i$, on conduit avec le mélange $\pi_i = \beta_i \piexp + (1-\beta_i)\hat{\pi}_i$ (l'expert agit avec probabilité $\beta_i$), on étiquette chaque état visité par l'action $\piexp(s)$, on l'ajoute à $\D$, puis on réentraîne $\hat{\pi}_{i+1}$ sur $\D$ entier. L'élève apprend ainsi sur sa propre distribution d'états, et l'écart devient linéaire en $H$. Nous utilisons $\beta_i = p^{\,i}$ et comparons $p = 0$, où l'expert ne conduit plus après les démonstrations (choix souvent le meilleur selon \citet{ross2011dagger}), à $p = 0{,}5$.
+
+\paragraph{RLPD et symmetric sampling.} RLPD est un SAC \citep{haarnoja2018sacapps} auquel on fournit un jeu fixe de transitions $\D_{\text{off}}$ en plus du buffer en ligne $\D_{\text{on}}$. Le symmetric sampling compose chaque batch de taille $b$ de $b/2$ transitions de $\D_{\text{off}}$ et $b/2$ de $\D_{\text{on}}$. Si l'on versait simplement les démonstrations dans le buffer, leur part, $|\D_{\text{off}}|/(|\D_{\text{off}}|+|\D_{\text{on}}|)$, tomberait ici sous $2\%$ en fin d'entraînement. Ce mélange est possible parce que la cible du critique ne dépend pas de la politique qui a produit la transition : RLPD n'imite pas l'expert, il apprend la valeur de ses actions. RLPD ajoute une Layer Normalization dans les critiques, qui borne leurs valeurs loin des données, et un ratio élevé de mises à jour par pas (UTD). Pour tenir dans notre budget de calcul, nous utilisons deux critiques au lieu d'un ensemble de dix, et un UTD de 10 au lieu de 20. Une ablation, \emph{SAC seul}, retire les démonstrations.
+
+\paragraph{Comparaison conceptuelle.} DAgger reçoit une étiquette d'action à chaque état : un signal riche, mais qui dit seulement ce que ferait l'expert, et qui coûte une requête à l'expert par pas. RLPD ne reçoit qu'une récompense scalaire, propagée par l'équation de Bellman : un signal plus pauvre, mais qui dit ce qui est bon. DAgger a donc l'expert pour plafond, alors que RLPD peut le dépasser, au prix d'une exploration et d'un critique plus difficiles à maîtriser.
+
+\section{Protocole expérimental}
+\label{sec-protocol}
+
+\paragraph{Environnement.} \texttt{pystk2-gymnasium} \citep{pystk2gym} (\texttt{supertuxkart/full-v0}), piste \texttt{cocoa\_temple}, un kart, un tour, au plus 1500 pas de $0{,}1$\,s. Avec un seul kart, la récompense native vaut $r_{t+1} = (\delta_{t+1} - \delta_t)/10 - 0{,}1 + 10 \cdot \ind[\text{arrivée}]$, où $\delta_t$ est la distance parcourue. Le retour d'un tour de longueur $L \approx 1517$\,m terminé en $T$ pas est donc
+\begin{equation}
+  G = L/10 - 0{,}1\,T + 10 ,
+  \label{eq-return}
+\end{equation}
+et celui d'un tour inachevé $G = \delta/10 - 150$ : maximiser $G$ revient exactement à minimiser le temps au tour. L'environnement est déterministe : une même politique déterministe refait toujours le même tour (seul l'affichage graphique, jamais utilisé en évaluation, modifie la simulation).
+
+\paragraph{Observations, actions et expert.} L'élève reçoit 28 nombres exprimés dans le repère du kart : vitesse, vecteur et distance au centre de la piste, angle de braquage maximal, extrémités et largeurs des 5 prochains segments. Il agit avec $a = (\text{steer}, \text{throttle}) \in [-1,1]^2$, un throttle négatif freinant ; drift, nitro, tir et sauvetage sont désactivés. L'expert est \texttt{Agent1} (équipe 1 de \texttt{pystk\_project} \citep{sigaud2025pystk}), un contrôleur écrit à la main, dont nous retirons la gestion des objets et du nitro et dont nous projetons les actions sur l'espace de l'élève. L'élève peut ainsi, en principe, reproduire exactement l'expert, condition de la garantie de DAgger.
+
+\paragraph{Données.} Un tour de l'expert, soit 609 transitions. L'environnement étant déterministe, d'autres tours seraient des copies. Nous n'ajoutons pas de bruit aux actions de l'expert : cette technique (DART \citep{laskey2017dart}) corrige elle-même le décalage de distribution du BC, et fausserait la comparaison avec DAgger. Ce jeu sert de $\D$ initial au BC et à DAgger, et de $\D_{\text{off}}$ à RLPD.
+
+\paragraph{Évaluation et statistiques.} Toute politique est évaluée sur un tour, sans bruit (action moyenne pour SAC). Le déterminisme rend inutile de répéter cet épisode : toute la variabilité vient de l'entraînement. La métrique principale est le retour \eqref{eq-return}, complété par le taux de tours terminés et le temps au tour. Chaque méthode est entraînée avec 10 graines, qui sont l'unité statistique ; le score d'une graine est celui de sa politique finale, sans sélection de la meilleure. L'axe commun est le nombre de pas d'environnement en ligne : environ 12\,000 pour DAgger, 30\,000 pour RLPD, dont nous lisons aussi le score à 12\,000 pas pour comparer à budget égal. Nous rapportons la moyenne avec un intervalle de confiance à 95\,\% par bootstrap, la médiane et l'IQM \citep{agarwal2021rliable}. Les méthodes sont comparées par les tests de Welch et de Mann--Whitney \citep{colas2019hitchhiker}, et à l'expert (déterministe) par un test de Student à un échantillon et un test de Wilcoxon. Toutes les comparaisons, fixées à l'avance, sont corrigées par la méthode de Holm \citep{holm1979simple}.
+
+\paragraph{Implémentation.} Code PyTorch sans bibliothèque de RL, entraînements sur le processeur d'un Apple M1 ; les hyper-paramètres figurent dans \cref{tab-hparams}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \caption{Hyper-paramètres. Ceux de SAC sont les valeurs usuelles, non optimisées.}
+  \label{tab-hparams}
+  \begin{tabular}{lll}
+    \toprule
+    Commun & réseaux & 2 couches cachées de 256, ReLU ; entrées standardisées sur les démonstrations \\
+    BC et DAgger & entraînement & erreur quadratique, sortie $\tanh$, Adam ($10^{-3}$), batch 256, 2000 pas \\
+     & DAgger & 20 itérations d'un épisode, réentraînement complet, $p \in \{0 ; 0{,}5\}$ \\
+    SAC et RLPD & optimisation & Adam ($3 \cdot 10^{-4}$), $\gamma = 0{,}99$, $\tau = 0{,}005$, batch 256 (RLPD : 128 + 128) \\
+     & critiques & 2, minimum dans la cible, Layer Normalization, UTD 10 \\
+     & acteur & gaussienne écrasée par $\tanh$, $\alpha_0 = 1$, entropie cible $-2$ \\
+     & budget & 30\,000 pas, évaluation environ tous les 1000 pas \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Résultats}
+\label{sec-results}
+
+% Les figures et tableaux sont produits par analysis/results.py et analysis/trajectory_gap.py.
+\newcommand{\fig}[2]{\IfFileExists{figures/#1.pdf}{\includegraphics[width=#2]{#1.pdf}}{\fbox{\parbox[c][3.5cm][c]{#2}{\centering\ttfamily\detokenize{#1}.pdf}}}}
+
+\Cref{tab-summary} résume les scores finaux, et \cref{fig-curves} montre comment chaque méthode y parvient au fil des pas d'environnement. L'expert sert de référence : 100,83 de retour, soit 60,9\,s.
+
+\begin{table}[t]
+  \centering
+  \caption{Scores finaux sur 10 graines (une évaluation déterministe par graine). Retour : moyenne et IC à 95\,\% par bootstrap. Réussite : graines qui terminent le tour. Temps : moyenne sur les tours terminés. 1\textsuperscript{er} tour : médiane du nombre de pas en ligne avant le premier tour terminé. 5 dern. : moyenne des 5 dernières évaluations de chaque graine (analyse exploratoire). RLPD @12k : RLPD lu au budget de DAgger.}
+  \label{tab-summary}
+  \resizebox{\linewidth}{!}{\IfFileExists{figures/summary_table.tex}{\input{figures/summary_table.tex}}{summary\_table.tex}}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}[t]{0.53\linewidth}\centering\fig{learning_curves}{\linewidth}\caption{Retour au fil de l'entraînement. En haut : moyenne et IC à 95\,\%. En bas : médiane, zoomée autour de l'expert (tirets).}\label{fig-learning}\end{subfigure}\hfill
+  \begin{subfigure}[t]{0.45\linewidth}\centering\fig{success_rate}{\linewidth}\caption{Proportion des graines dont la politique courante termine le tour (moyenne et IC à 95\,\%).}\label{fig-success}\end{subfigure}
+  \caption{Courbes d'apprentissage, en fonction du nombre de pas d'environnement en ligne (10 graines par méthode). La ligne pointillée verticale marque le budget de DAgger. Les deux variantes de DAgger restent au niveau de l'expert dès le départ ; RLPD n'apprend à conduire qu'après plusieurs milliers de pas, puis reste instable ; SAC seul n'y parvient jamais.}
+  \label{fig-curves}
+\end{figure}
+
+\paragraph{DAgger : immédiatement au niveau de l'expert.} Le BC, qui est l'itération 0 de DAgger, termine déjà tous ses tours et dépasse légèrement l'expert (101,20 contre 100,83). Les itérations suivantes de DAgger restent à ce niveau (\cref{fig-learning}) et terminent 209 tours sur 210 évaluations pour $p = 0$, 210 sur 210 pour $p = 0{,}5$. Avec $p = 0{,}5$, DAgger obtient les meilleurs scores de l'étude : moyenne 102,13, médiane 102,88, IQM 102,51, soit environ 1,3\,s de mieux que l'expert. La variante $p = 0$ a une médiane proche (101,64), mais sa dernière itération a échoué sur une graine (kart bloqué à 100\,m de l'arrivée), ce qui fait chuter sa moyenne à 90,67. D'une itération à l'autre, le temps au tour varie de 58 à 66\,s : chaque réentraînement part d'un réseau neuf, et une petite différence de braquage peut changer toute la fin du tour.
+
+\paragraph{RLPD : un apprentissage tardif et instable.} RLPD commence avec un acteur aléatoire et reste immobile pendant plusieurs milliers de pas, le temps que la température $\alpha$ décroisse et que le critique apprenne la valeur des actions de l'expert. Toutes les graines bouclent ensuite un premier tour, entre 6\,800 et 12\,500 pas (médiane 8\,600). Suit une phase instable, visible sur la médiane entre 12\,000 et 20\,000 pas, où les politiques alternent tours rapides et échecs (\cref{fig-success}). En fin d'entraînement, 8 graines sur 10 terminent le tour, en 59,4\,s en moyenne, et 5 d'entre elles en moins de 58,5\,s ; les deux autres se sont effondrées et restent immobiles. D'où une médiane élevée (102,71), proche de DAgger, mais une moyenne de 51,84.
+
+\paragraph{Sans démonstrations, SAC échoue.} Avec le même algorithme et le même budget, mais sans données de l'expert, aucune graine ne termine le moindre tour : le meilleur kart parcourt 1\,316\,m sur 1\,517, et la plupart finissent immobiles (retour final $-142{,}22$).
+
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}\centering\fig{final_scores}{\linewidth}\caption{Score final de chaque graine (points) et moyenne avec IC à 95\,\% (barres). En bas, zoom autour de l'expert.}\label{fig-final}\end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}\centering\fig{trajectory_gap_rlpd}{\linewidth}\caption{RLPD (graine 0, 58,0\,s) contre l'expert, en fonction de la distance parcourue : écart de temps, volant et accélérateur. La zone grisée est celle où l'expert subit le parachute.}\label{fig-gap}\end{subfigure}
+  \caption{À gauche, la dispersion des scores finaux révèle les effondrements de RLPD et l'unique échec de DAgger $p=0$. À droite, l'écart de RLPD sur l'expert se creuse entièrement à l'endroit de la banane.}
+  \label{fig-final-gap}
+\end{figure}
+
+\paragraph{Battre l'expert en évitant une banane.} L'expert roule sur la même banane à chaque tour et subit un parachute pendant 3,8\,s (38 pas). Les politiques les plus rapides de DAgger et de RLPD (58,0 à 58,3\,s) passent par une autre trajectoire à cet endroit et ne touchent jamais la banane. \Cref{fig-gap} le montre pour RLPD : l'écart de temps reste presque nul pendant 1\,300\,m, puis se creuse d'environ 2,9\,s précisément dans cette zone. Le BC, lui, prend le parachute comme l'expert ; son léger avantage (0,4\,s en moyenne) vient de la fin du tour, où il conduit de façon plus lisse que les règles à seuils de l'expert.
+
+\paragraph{Tests statistiques.} \Cref{tab-tests} donne toutes les comparaisons fixées à l'avance. Après correction de Holm sur les 14 tests, seuls deux écarts sont significatifs : SAC seul est moins bon que RLPD ($-194$, $p = 0{,}003$ pour Welch) et que l'expert. Le BC dépasse l'expert de 0,37 avec un intervalle de confiance qui exclut 0, mais la correction le laisse à la limite du seuil ($p = 0{,}05$ à $0{,}06$). Les autres différences, notamment entre DAgger et RLPD, ne sont pas significatives : les intervalles sont très larges, à cause des effondrements de RLPD, et 10 graines ne permettent de détecter que des écarts d'environ 1,25 écart-type.
+
+\begin{table}[t]
+  \centering
+  \small
+  \caption{Comparaisons entre méthodes et avec l'expert : différence des moyennes ($\Delta$, avec IC à 95\,\% par bootstrap) et $p$-valeurs corrigées par la méthode de Holm sur l'ensemble des 14 tests. Contre l'expert, déterministe, les tests sont à un échantillon (Student et Wilcoxon).}
+  \label{tab-tests}
+  \IfFileExists{figures/tests_table.tex}{\input{figures/tests_table.tex}}{tests\_table.tex}
+\end{table}
+
+\section{Discussion}
+\label{sec-discussion}
+
+\paragraph{Q1 -- À budget égal, DAgger l'emporte.} Après environ 12\,000 pas, DAgger termine tous ses tours, alors que RLPD n'en termine que 8 sur 10 et a un IQM inférieur de près de 4 points (98,70 contre 102,51). L'intervalle de confiance de la différence de moyennes exclut 0 ($-36{,}41$ [$-83{,}47$ ; $-1{,}34$]), même si le test ne résiste pas à la correction de Holm. DAgger est aussi bien moins coûteux en calcul : quelques minutes par graine, contre environ 40 minutes pour RLPD avec 10 mises à jour du critique par pas. En contrepartie, il demande un expert interrogeable à chaque pas, soit environ 12\,600 étiquettes, quand RLPD se contente d'un tour enregistré. Avec 2,5 fois plus de pas, RLPD rejoint DAgger en médiane, mais pas en fiabilité.
+
+\paragraph{Q2 -- Interroger l'expert en ligne apporte peu ici.} DAgger ne fait pas significativement mieux que le BC ($+0{,}93$, IC [$-0{,}20$ ; $1{,}94$]). La théorie l'explique : la borne $O(H^2\varepsilon)$ du BC décrit le pire cas, où chaque erreur éloigne l'élève de la trajectoire de l'expert. Ici, l'environnement est déterministe, l'expert ne réagit qu'à l'état courant et l'élève peut le reproduire exactement : l'imitation est assez précise pour que l'élève ne quitte jamais la trajectoire, et le décalage de distribution n'apparaît pas. Le choix de $\beta_i$ n'a pas d'effet démontrable ; la variante $p = 0{,}5$ n'a connu aucun échec, mais une seule graine sépare les deux variantes.
+
+\paragraph{Q3 -- Le symmetric sampling est indispensable.} C'est l'effet le plus net de l'étude. Les 609 transitions de l'expert suffisent à faire passer SAC de zéro tour terminé à dix graines sur dix qui en terminent au moins un. Comme elles occupent la moitié de chaque batch, le critique apprend dès le départ la valeur d'une trajectoire qui mène à l'arrivée, ce que l'exploration aléatoire ne découvre pas en 30\,000 pas.
+
+\paragraph{Q4 -- Les deux méthodes peuvent dépasser l'expert, pour des raisons différentes.} RLPD le fait comme prévu, en optimisant directement le temps au tour. Le cas de DAgger est plus surprenant : la garantie de DAgger porte sur l'erreur d'imitation, pas sur la performance, et rien n'empêche l'élève de faire mieux que son modèle. En distillant un contrôleur à règles dans un réseau de neurones, DAgger obtient une conduite plus lisse, qui trouve parfois une trajectoire évitant la banane.
+
+\paragraph{Limites.} Nous avons simplifié RLPD (2 critiques au lieu de 10, UTD de 10 au lieu de 20) pour tenir dans notre budget de calcul. L'ensemble de critiques sert précisément à limiter la surestimation et le sur-apprentissage dus à un UTD élevé : nos deux effondrements sont probablement liés à cette simplification, et tester RLPD complet est la suite naturelle de ce travail. L'étude porte sur une seule piste et un seul expert, avec 10 graines par méthode. Le score de la dernière itération est bruité pour DAgger, ce que confirme la moyenne plus stable des 5 dernières évaluations (102,11 pour $p = 0{,}5$). Enfin, la récompense récompense la distance parcourue : deux évaluations intermédiaires de RLPD ont mesuré plus de distance que la longueur de la piste, ce qui gonfle leur retour au-delà du maximum théorique. Aucune politique finale n'est concernée, et le temps au tour reste dans ce cas la mesure fiable.
+
+\section{Conclusion}
+\label{sec-conclusion}
+
+Sur cette tâche déterministe, avec un expert réactif et reproductible, DAgger est la méthode la plus efficace et la plus fiable : il atteint et dépasse légèrement l'expert dès le départ, pour un coût de calcul minime, à condition de pouvoir interroger cet expert à chaque pas. RLPD n'a besoin que d'un tour enregistré et peut aussi dépasser l'expert, mais il lui faut plus d'interactions, beaucoup plus de calcul, et il reste instable dans notre version simplifiée. Le symmetric sampling est la pièce maîtresse de RLPD : sans lui, le même algorithme n'apprend pas à boucler un tour.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

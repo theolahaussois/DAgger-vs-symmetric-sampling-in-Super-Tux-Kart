@@ -1,37 +1,50 @@
-import numpy as np
+import argparse
 from pathlib import Path
-from src.envs.stk_wrapper import STKEnv
-from src.agents.team1.agent1 import Agent1
 
-def collect_expert_demonstrations(track_name, num_episodes, max_steps, save_path):
-    env = STKEnv(track_name, max_steps)
-    expert = Agent1(env)    
-    dataset_states = []
-    dataset_actions = []    
-    for episode in range(num_episodes):
-        obs, info = env.reset(seed=42 + episode, options={})
-        expert.reset()        
-        terminated = False
-        truncated = False
-        episode_reward = 0.0        
-        while not (terminated or truncated):
-            action = expert.choose_action(obs)            
-            dataset_states.append(obs)
-            dataset_actions.append(action)            
-            obs, reward, terminated, truncated, info = env.step(action)
-            episode_reward += reward            
-        print(f"Épisode {episode + 1}/{num_episodes} terminé. Récompense : {episode_reward:.2f}")        
-    env.close()    
-    states_array = np.array(dataset_states, dtype=np.float32)
-    actions_array = np.array(dataset_actions, dtype=np.float32)    
-    Path(save_path).parent.mkdir(parents_exist=True, exist_ok=True)
-    np.savez_compressed(save_path, states=states_array, actions=actions_array)
-    print(f"Dataset expert sauvegardé dans {save_path} (Shape states: {states_array.shape})")
+import numpy as np
+
+from src import config
+from src.env import make_env, obs_to_vector, vector_to_action
+from src.expert import Expert
+
+
+def main(episodes, out):
+    env = make_env()
+    expert = Expert()
+    keys = ["obs", "action", "reward", "next_obs", "terminated", "episode"]
+    data = {k: [] for k in keys}
+
+    for ep in range(episodes):
+        obs, _ = env.reset(seed=config.COLLECT_SEED + ep)
+        expert.reset()
+        done, steps, ret = False, 0, 0.0
+        while not done:
+            a = expert.act(obs)
+            next_obs, r, terminated, truncated, info = env.step(vector_to_action(a))
+
+            data["obs"].append(obs_to_vector(obs))
+            data["action"].append(a)
+            data["reward"].append(r)
+            data["next_obs"].append(obs_to_vector(next_obs))
+            data["terminated"].append(terminated)  # pas truncated : la coupure de temps n'est pas un état terminal
+            data["episode"].append(ep)
+
+            obs = next_obs
+            done = terminated or truncated
+            steps += 1
+            ret += r
+        print(f"Épisode {ep + 1}/{episodes} | tour fini : {terminated} | temps : {steps * config.DT:.1f} s "
+              f"| distance : {info['distance']:.0f} m | retour : {ret:.1f}")
+    env.close()
+
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(out, **{k: np.array(v, dtype=np.float32) for k, v in data.items()})
+    print(f"{len(data['obs'])} transitions sauvegardées dans {out}")
+
 
 if __name__ == "__main__":
-    collect_expert_demonstrations(
-        track_name="cocoa_temple",
-        num_episodes=5,
-        max_steps=1000,
-        save_path="runs/symmetric-sampling/expert_dataset.npz"
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--episodes", type=int, default=1)
+    parser.add_argument("--out", default=config.EXPERT_DATASET)
+    args = parser.parse_args()
+    main(args.episodes, args.out)

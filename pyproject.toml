@@ -4,23 +4,12 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "gymnasium",
-    "ipywidgets",
-    "jupyter",
-    "jupyterlab",
     "matplotlib",
-    "mazemdp",
     "numpy",
     "omegaconf",
-    "optuna",
-    "pandas>=3.1.1",
-    "plotly>=7.1.0",
     "pystk2-gymnasium>=0.10.0",
-    "pysupertuxkart2>=0.7.4",
-    "pyyaml",
-    "rl-mind",
     "scipy",
     "torch",
-    "tqdm",
 ]
 
 [build-system]
