@@ -14,7 +14,7 @@ from src.policy import load_learner
 from src.sac import load_actor
 
 PARACHUTE = pystk2.Attachment.Type.PARACHUTE.value
-COLORS = {"Expert": "#5f5f5a", "BC": "#eb6834", "DAgger p=0.5": "#2a78d6", "RLPD": "#1baf7a", "DAgger p=0": "#eda100", "SAC seul": "#e87ba4"}
+COLORS = {"Expert": "#5f5f5a", "BC": "#eb6834", "DAgger p=0.5": "#2a78d6", "RLPD": "#1baf7a", "DAgger p=0": "#eda100", "SAC only": "#e87ba4"}
 
 
 def record(env, policy, name):
@@ -50,15 +50,15 @@ def plot(runs, label, path):
 
     axes[0].axhline(0, color="#8a8a85", linewidth=0.8)
     axes[0].plot(grid, time_at[label] - time_at["Expert"], color=COLORS[label], linewidth=1.5)
-    axes[0].set_ylabel(f"Écart de temps\n{label} − expert (s)")
-    axes[0].text(0.01, 0.06, f"< 0 : {label} en avance", transform=axes[0].transAxes, color="#5f5f5a", fontsize=8)
+    axes[0].set_ylabel(f"Time gap\n{label} − expert (s)")
+    axes[0].text(0.01, 0.06, f"< 0: {label} ahead", transform=axes[0].transAxes, color="#5f5f5a", fontsize=8)
     axes[0].text(dist[para].mean(), 1.02, "parachute", transform=axes[0].get_xaxis_transform(), ha="center", va="bottom", color="#5f5f5a", fontsize=8)
 
-    for ax, key, label in [(axes[1], "steer", "Volant"), (axes[2], "throttle", "Accélérateur")]:
+    for ax, key, label in [(axes[1], "steer", "Steering"), (axes[2], "throttle", "Throttle")]:
         for name, rows in runs.items():
             ax.plot(column(rows, "distance"), column(rows, key), color=COLORS[name], linewidth=1.0, label=name)
         ax.set_ylabel(label)
-    axes[2].set_xlabel("Distance parcourue (m)")
+    axes[2].set_xlabel("Distance travelled (m)")
     fig.legend(*axes[1].get_legend_handles_labels(), frameon=False, ncol=2, loc="upper center")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(path)

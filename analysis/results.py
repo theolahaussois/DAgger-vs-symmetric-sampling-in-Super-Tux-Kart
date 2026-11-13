@@ -14,9 +14,9 @@ METHODS = {
     "BC": "runs/bc",
     "RLPD": "runs/rlpd_ratio0.5",
     "DAgger p=0": "runs/dagger_p0.0",
-    "SAC seul": "runs/rlpd_ratio0.0",
+    "SAC only": "runs/rlpd_ratio0.0",
 }
-CURVE_METHODS = ["DAgger p=0.5", "DAgger p=0", "RLPD", "SAC seul"]
+CURVE_METHODS = ["DAgger p=0.5", "DAgger p=0", "RLPD", "SAC only"]
 COLORS = dict(zip(METHODS, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]))
 DASHED = {"DAgger p=0"}  # se superpose souvent à DAgger p=0.5
 INK, MUTED, GRID = "#3d3d3a", "#5f5f5a", "#e5e5e2"
@@ -25,7 +25,7 @@ LAST_K = 5  # analyse exploratoire : moyenne des K dernières évaluations
 COMPARISONS = [
     ("DAgger p=0.5", "RLPD"), ("DAgger p=0", "RLPD"),
     ("DAgger p=0.5", "RLPD @12k"), ("DAgger p=0", "RLPD @12k"),
-    ("RLPD", "SAC seul"), ("DAgger p=0", "DAgger p=0.5"),
+    ("RLPD", "SAC only"), ("DAgger p=0", "DAgger p=0.5"),
     ("BC", "DAgger p=0"), ("BC", "DAgger p=0.5"),
 ]
 N_BOOT = 10_000
@@ -166,10 +166,10 @@ def plot_curves(expert, path):
             (plot_mean_band if ylim is None else plot_median)(ax, name, grid, "return")
         if ylim:
             ax.set_ylim(*ylim)
-        ax.set_ylabel("Retour (moyenne, IC 95 %)" if ylim is None else "Médiane (zoom)")
-    axes[0].text(BUDGET, 1.01, "budget DAgger", transform=axes[0].get_xaxis_transform(), ha="center", va="bottom", color=MUTED, fontsize=8)
+        ax.set_ylabel("Return (mean, 95 % CI)" if ylim is None else "Median (zoom)")
+    axes[0].text(BUDGET, 1.01, "DAgger budget", transform=axes[0].get_xaxis_transform(), ha="center", va="bottom", color=MUTED, fontsize=8)
     axes[1].text(30_000, expert, "expert ", ha="right", va="bottom", color=MUTED, fontsize=8)
-    axes[1].set_xlabel("Pas d'environnement en ligne")
+    axes[1].set_xlabel("Online environment steps")
     fig.legend(*axes[0].get_legend_handles_labels(), frameon=False, ncol=4, loc="upper center")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(path)
@@ -183,9 +183,9 @@ def plot_success(path):
     for name in available(CURVE_METHODS):
         plot_mean_band(ax, name, grid, "finished", scale=100)
     ax.set_ylim(-5, 105)
-    ax.set_ylabel("Graines qui finissent le tour (%)")
-    ax.set_xlabel("Pas d'environnement en ligne")
-    ax.text(BUDGET, 1.01, "budget DAgger", transform=ax.get_xaxis_transform(), ha="center", va="bottom", color=MUTED, fontsize=8)
+    ax.set_ylabel("Seeds finishing the lap (%)")
+    ax.set_xlabel("Online environment steps")
+    ax.text(BUDGET, 1.01, "DAgger budget", transform=ax.get_xaxis_transform(), ha="center", va="bottom", color=MUTED, fontsize=8)
     fig.legend(*ax.get_legend_handles_labels(), frameon=False, ncol=4, loc="upper center")
     fig.tight_layout(rect=(0, 0, 1, 0.9))
     fig.savefig(path)
@@ -207,40 +207,40 @@ def plot_final(final, expert, path):
             ax.errorbar(i + 0.3, x.mean(), yerr=[[x.mean() - low], [high - x.mean()]], color=INK, capsize=3, fmt="o", markersize=4)
         if ylim:
             ax.set_ylim(*ylim)
-        ax.set_ylabel("Retour final par graine" if ylim is None else "Zoom autour de l'expert")
+        ax.set_ylabel("Final return per seed" if ylim is None else "Zoom around the expert")
     axes[1].set_xticks(range(len(names)), names)
     axes[1].text(-0.45, expert, "expert", ha="left", va="bottom", color=MUTED, fontsize=8)
     fig.tight_layout()
     fig.savefig(path)
 
 
-def fr(x, digits=2):
+def num(x, digits=2):
     if np.isnan(x):
         return "--"
-    text = f"{x:.{digits}f}".replace(".", "{,}")
+    text = f"{x:.{digits}f}"
     return "$-$" + text[1:] if text.startswith("-") else text
 
 
 def write_tables(summary, tests, expert_row, folder):
     lines = [r"\begin{tabular}{lccccccc}", r"\toprule",
-             r"Méthode & Retour [IC 95\,\%] & Médiane & IQM & Réussite & Temps (s) & 1\textsuperscript{er} tour (pas) & 5 dern. [IC 95\,\%] \\",
+             r"Method & Return [95\,\% CI] & Median & IQM & Success & Time (s) & 1\textsuperscript{st} lap (steps) & Last 5 [95\,\% CI] \\",
              r"\midrule",
-             f"Expert & {fr(expert_row['return'])} & -- & -- & 100\\,\\% & {fr(expert_row['lap_time'], 1)} & -- & -- \\\\"]
-    order = ["BC", "DAgger p=0", "DAgger p=0.5", "RLPD @12k", "RLPD", "SAC seul"]
+             f"Expert & {num(expert_row['return'])} & -- & -- & 100\\,\\% & {num(expert_row['lap_time'], 1)} & -- & -- \\\\"]
+    order = ["BC", "DAgger p=0", "DAgger p=0.5", "RLPD @12k", "RLPD", "SAC only"]
     for r in sorted(summary, key=lambda r: order.index(r["method"])):
-        last5 = "--" if np.isnan(r["last5_mean"]) else f"{fr(r['last5_mean'])} [{fr(r['last5_ci_low'])} ; {fr(r['last5_ci_high'])}]"
+        last5 = "--" if np.isnan(r["last5_mean"]) else f"{num(r['last5_mean'])} [{num(r['last5_ci_low'])}, {num(r['last5_ci_high'])}]"
         lap = "--" if np.isnan(r["first_lap_median"]) else f"{r['first_lap_median']:.0f}"
         if not np.isnan(r["never_finished"]) and r["never_finished"] > 0:
-            lap += f" ({int(r['never_finished'])} jamais)"
-        lines.append(f"{r['method']} & {fr(r['mean'])} [{fr(r['ci95_low'])} ; {fr(r['ci95_high'])}] & {fr(r['median'])} & {fr(r['iqm'])} & "
-                     f"{100 * r['success_rate']:.0f}\\,\\% & {fr(r['lap_time_finished'], 1)} & {lap} & {last5} \\\\")
+            lap += f" ({int(r['never_finished'])} never)"
+        lines.append(f"{r['method']} & {num(r['mean'])} [{num(r['ci95_low'])}, {num(r['ci95_high'])}] & {num(r['median'])} & {num(r['iqm'])} & "
+                     f"{100 * r['success_rate']:.0f}\\,\\% & {num(r['lap_time_finished'], 1)} & {lap} & {last5} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     Path(folder, "summary_table.tex").write_text("\n".join(lines) + "\n")
 
-    lines = [r"\begin{tabular}{lccc}", r"\toprule", r"Comparaison & $\Delta$ [IC 95\,\%] & $p$ Welch (Holm) & $p$ Mann--Whitney (Holm) \\", r"\midrule"]
+    lines = [r"\begin{tabular}{lccc}", r"\toprule", r"Comparison & $\Delta$ [95\,\% CI] & $p$ Welch (Holm) & $p$ Mann--Whitney (Holm) \\", r"\midrule"]
     for r in tests:
-        lines.append(f"{r['comparison'].replace(' - ', ' $-$ ')} & {fr(r['diff_mean'])} [{fr(r['ci95_low'])} ; {fr(r['ci95_high'])}] & "
-                     f"{fr(r['p_welch_holm'], 3)} & {fr(r['p_mannwhitney_holm'], 3)} \\\\")
+        lines.append(f"{r['comparison'].replace(' - ', ' $-$ ')} & {num(r['diff_mean'])} [{num(r['ci95_low'])}, {num(r['ci95_high'])}] & "
+                     f"{num(r['p_welch_holm'], 3)} & {num(r['p_mannwhitney_holm'], 3)} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     Path(folder, "tests_table.tex").write_text("\n".join(lines) + "\n")
 
