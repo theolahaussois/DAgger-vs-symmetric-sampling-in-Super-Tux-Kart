@@ -214,6 +214,10 @@ def plot_final(final, expert, path):
     fig.savefig(path)
 
 
+def pval(p):
+    return "$<$0.001" if p < 0.001 else num(p, 3)
+
+
 def num(x, digits=2):
     if np.isnan(x):
         return "--"
@@ -240,7 +244,7 @@ def write_tables(summary, tests, expert_row, folder):
     lines = [r"\begin{tabular}{lccc}", r"\toprule", r"Comparison & $\Delta$ [95\,\% CI] & $p$ Welch (Holm) & $p$ Mann--Whitney (Holm) \\", r"\midrule"]
     for r in tests:
         lines.append(f"{r['comparison'].replace(' - ', ' $-$ ')} & {num(r['diff_mean'])} [{num(r['ci95_low'])}, {num(r['ci95_high'])}] & "
-                     f"{num(r['p_welch_holm'], 3)} & {num(r['p_mannwhitney_holm'], 3)} \\\\")
+                     f"{pval(r['p_welch_holm'])} & {pval(r['p_mannwhitney_holm'])} \\\\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     Path(folder, "tests_table.tex").write_text("\n".join(lines) + "\n")
 
